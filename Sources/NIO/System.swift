@@ -115,7 +115,7 @@ private func preconditionIsNotBlacklistedErrno(err: CInt, where function: String
 
 /* Sorry, we really try hard to not use underscored attributes. In this case however we seem to break the inlining threshold which makes a system call take twice the time, ie. we need this exception. */
 @inline(__always)
-internal func wrapSyscallMayBlock<T: FixedWidthInteger>(where function: String = #function, _ body: () throws -> T) throws -> IOResult<T> {
+internal func wrapSyscallMayBlock<T: FixedWidthInteger>(nonblocking: Bool, where function: String = #function, _ body: () throws -> T) throws -> IOResult<T> {
     while true {
         let res = try body()
         if res == -1 {
@@ -301,7 +301,7 @@ internal enum Posix {
     public static func accept(descriptor: CInt,
                               addr: UnsafeMutablePointer<sockaddr>?,
                               len: UnsafeMutablePointer<socklen_t>?) throws -> CInt? {
-        let result: IOResult<CInt> = try wrapSyscallMayBlock {
+        let result: IOResult<CInt> = try wrapSyscallMayBlock(nonblocking: false) {
             let fd = sysAccept(descriptor, addr, len)
 
             #if !os(Linux)
@@ -355,14 +355,14 @@ internal enum Posix {
 
     @inline(never)
     public static func write(descriptor: CInt, pointer: UnsafeRawPointer, size: Int) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysWrite(descriptor, pointer, size)
         }
     }
 
     @inline(never)
     public static func writev(descriptor: CInt, iovecs: UnsafeBufferPointer<IOVector>) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysWritev(descriptor, iovecs.baseAddress!, CInt(iovecs.count))
         }
     }
@@ -370,28 +370,28 @@ internal enum Posix {
     @inline(never)
     public static func sendto(descriptor: CInt, pointer: UnsafeRawPointer, size: size_t,
                               destinationPtr: UnsafePointer<sockaddr>, destinationSize: socklen_t) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysSendTo(descriptor, pointer, size, 0, destinationPtr, destinationSize)
         }
     }
 
     @inline(never)
     public static func read(descriptor: CInt, pointer: UnsafeMutableRawPointer, size: size_t) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysRead(descriptor, pointer, size)
         }
     }
 
     @inline(never)
     public static func pread(descriptor: CInt, pointer: UnsafeMutableRawPointer, size: size_t, offset: off_t) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysPread(descriptor, pointer, size, offset)
         }
     }
 
     @inline(never)
     public static func recvfrom(descriptor: CInt, pointer: UnsafeMutableRawPointer, len: size_t, addr: UnsafeMutablePointer<sockaddr>, addrlen: UnsafeMutablePointer<socklen_t>) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             sysRecvFrom(descriptor, pointer, len, 0, addr, addrlen)
         }
     }
@@ -455,14 +455,14 @@ internal enum Posix {
 
     @inline(never)
     public static func sendmmsg(sockfd: CInt, msgvec: UnsafeMutablePointer<MMsgHdr>, vlen: CUnsignedInt, flags: CInt) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             Int(sysSendMmsg(sockfd, msgvec, vlen, flags))
         }
     }
 
     @inline(never)
     public static func recvmmsg(sockfd: CInt, msgvec: UnsafeMutablePointer<MMsgHdr>, vlen: CUnsignedInt, flags: CInt, timeout: UnsafeMutablePointer<timespec>?) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock {
+        return try wrapSyscallMayBlock(nonblocking: false) {
             Int(sysRecvMmsg(sockfd, msgvec, vlen, flags, timeout))
         }
     }
