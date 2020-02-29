@@ -120,16 +120,10 @@ internal func wrapSyscallMayBlock<T: FixedWidthInteger>(nonblocking: Bool, where
         let res = try body()
         if res == -1 {
             let err = errno
-            switch err {
-            case EINTR:
-                continue
-            case EWOULDBLOCK:
-                return .wouldBlock(0)
-            default:
-                preconditionIsNotBlacklistedErrno(err: err, where: function)
-                throw IOError(errnoCode: err, reason: function)
-            }
-
+            if err == EINTR { continue }
+            if nonblocking == false && err == EWOULDBLOCK { return .wouldBlock(0) }
+            preconditionIsNotBlacklistedErrno(err: err, where: function)
+            throw IOError(errnoCode: err, reason: function)
         }
         return .processed(res)
     }
