@@ -125,15 +125,12 @@ internal enum Linux {
                                addr: UnsafeMutablePointer<sockaddr>?,
                                len: UnsafeMutablePointer<socklen_t>?,
                                flags: CInt) throws -> CInt? {
-        let result: IOResult<CInt> = try wrapSyscallMayBlock {
+        if case .processed(let fd) = try wrapSyscallMayBlock(nonblocking: false, {
             CNIOLinux.CNIOLinux_accept4(descriptor, addr, len, flags)
+        }) {
+          return fd
         }
-        switch result {
-        case .processed(let fd):
-            return fd
-        default:
-            return nil
-        }
+        return nil
     }
 }
 #endif
