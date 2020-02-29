@@ -113,9 +113,22 @@ private func preconditionIsNotBlacklistedErrno(err: CInt, where function: String
     precondition(!isBlacklistedErrno(err), "blacklisted errno \(err) \(String(cString: strerror(err)!)) in \(function))")
 }
 
+internal extension IOResult where T: FixedWidthInteger {
+  var result: T! {
+    get {
+      switch self {
+      case .processed(let result):
+        return result
+      default:
+        return nil
+      }
+    }
+  }
+}
+
 /* Sorry, we really try hard to not use underscored attributes. In this case however we seem to break the inlining threshold which makes a system call take twice the time, ie. we need this exception. */
 @inline(__always)
-internal func wrapSyscallMayBlock<T: FixedWidthInteger>(nonblocking: Bool, where function: String = #function, _ body: () throws -> T) throws -> IOResult<T> {
+internal func call<T: FixedWidthInteger>(nonblocking: Bool, where function: String = #function, _ body: () throws -> T) throws -> IOResult<T> {
     while true {
         let res = try body()
         if res == -1 {
@@ -126,24 +139,6 @@ internal func wrapSyscallMayBlock<T: FixedWidthInteger>(nonblocking: Bool, where
             throw IOError(errnoCode: err, reason: function)
         }
         return .processed(res)
-    }
-}
-
-/* Sorry, we really try hard to not use underscored attributes. In this case however we seem to break the inlining threshold which makes a system call take twice the time, ie. we need this exception. */
-@inline(__always)
-@discardableResult
-internal func wrapSyscall<T: FixedWidthInteger>(nonblocking: Bool = true, where function: String = #function, _ body: () throws -> T) throws -> T {
-    while true {
-        let res = try body()
-        if res == -1 {
-            let err = errno
-            if err == EINTR {
-                continue
-            }
-            preconditionIsNotBlacklistedErrno(err: err, where: function)
-            throw IOError(errnoCode: err, reason: function)
-        }
-        return res
     }
 }
 
@@ -221,7 +216,7 @@ internal enum Posix {
 
     @inline(never)
     public static func shutdown(descriptor: CInt, how: Shutdown) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysShutdown(descriptor, how.cValue)
         }
     }
@@ -247,7 +242,7 @@ internal enum Posix {
 
     @inline(never)
     public static func bind(descriptor: CInt, ptr: UnsafePointer<sockaddr>, bytes: Int) throws {
-         try wrapSyscall(nonblocking: true) {
+         _ = try call(nonblocking: true) {
             sysBind(descriptor, ptr, socklen_t(bytes))
         }
     }
@@ -256,22 +251,22 @@ internal enum Posix {
     @discardableResult
     // TODO: Allow varargs
     public static func fcntl(descriptor: CInt, command: CInt, value: CInt) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysFcntl(descriptor, command, value)
-        }
+        }.result
     }
 
     @inline(never)
     public static func socket(domain: CInt, type: CInt, `protocol`: CInt) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             return sysSocket(domain, type, `protocol`)
-        }
+        }.result
     }
 
     @inline(never)
     public static func setsockopt(socket: CInt, level: CInt, optionName: CInt,
                                   optionValue: UnsafeRawPointer, optionLen: socklen_t) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysSetsockopt(socket, level, optionName, optionValue, optionLen)
         }
     }
@@ -279,14 +274,14 @@ internal enum Posix {
     @inline(never)
     public static func getsockopt(socket: CInt, level: CInt, optionName: CInt,
                                   optionValue: UnsafeMutableRawPointer, optionLen: UnsafeMutablePointer<socklen_t>) throws {
-         try wrapSyscall(nonblocking: true) {
+         _ = try call(nonblocking: true) {
             sysGetsockopt(socket, level, optionName, optionValue, optionLen)
         }
     }
 
     @inline(never)
     public static func listen(descriptor: CInt, backlog: CInt) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysListen(descriptor, backlog)
         }
     }
@@ -295,7 +290,7 @@ internal enum Posix {
     public static func accept(descriptor: CInt,
                               addr: UnsafeMutablePointer<sockaddr>?,
                               len: UnsafeMutablePointer<socklen_t>?) throws -> CInt? {
-        let result: IOResult<CInt> = try wrapSyscallMayBlock(nonblocking: false) {
+        let result: IOResult<CInt> = try call(nonblocking: false) {
             let fd = sysAccept(descriptor, addr, len)
 
             #if !os(Linux)
@@ -321,7 +316,7 @@ internal enum Posix {
     @inline(never)
     public static func connect(descriptor: CInt, addr: UnsafePointer<sockaddr>, size: socklen_t) throws -> Bool {
         do {
-            try wrapSyscall(nonblocking: true) {
+            _ = try call(nonblocking: true) {
                 sysConnect(descriptor, addr, size)
             }
             return true
@@ -335,28 +330,28 @@ internal enum Posix {
 
     @inline(never)
     public static func open(file: UnsafePointer<CChar>, oFlag: CInt, mode: mode_t) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysOpenWithMode(file, oFlag, mode)
-        }
+        }.result
     }
 
     @inline(never)
     public static func open(file: UnsafePointer<CChar>, oFlag: CInt) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysOpen(file, oFlag)
-        }
+        }.result
     }
 
     @inline(never)
     public static func write(descriptor: CInt, pointer: UnsafeRawPointer, size: Int) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysWrite(descriptor, pointer, size)
         }
     }
 
     @inline(never)
     public static func writev(descriptor: CInt, iovecs: UnsafeBufferPointer<IOVector>) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysWritev(descriptor, iovecs.baseAddress!, CInt(iovecs.count))
         }
     }
@@ -364,28 +359,28 @@ internal enum Posix {
     @inline(never)
     public static func sendto(descriptor: CInt, pointer: UnsafeRawPointer, size: size_t,
                               destinationPtr: UnsafePointer<sockaddr>, destinationSize: socklen_t) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysSendTo(descriptor, pointer, size, 0, destinationPtr, destinationSize)
         }
     }
 
     @inline(never)
     public static func read(descriptor: CInt, pointer: UnsafeMutableRawPointer, size: size_t) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysRead(descriptor, pointer, size)
         }
     }
 
     @inline(never)
     public static func pread(descriptor: CInt, pointer: UnsafeMutableRawPointer, size: size_t, offset: off_t) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysPread(descriptor, pointer, size, offset)
         }
     }
 
     @inline(never)
     public static func recvfrom(descriptor: CInt, pointer: UnsafeMutableRawPointer, len: size_t, addr: UnsafeMutablePointer<sockaddr>, addrlen: UnsafeMutablePointer<socklen_t>) throws -> IOResult<ssize_t> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             sysRecvFrom(descriptor, pointer, len, 0, addr, addrlen)
         }
     }
@@ -393,17 +388,17 @@ internal enum Posix {
     @discardableResult
     @inline(never)
     public static func lseek(descriptor: CInt, offset: off_t, whence: CInt) throws -> off_t {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysLseek(descriptor, offset, whence)
-        }
+        }.result
     }
 
     @discardableResult
     @inline(never)
     public static func dup(descriptor: CInt) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysDup(descriptor)
-        }
+        }.result
     }
 
     @discardableResult
@@ -419,7 +414,7 @@ internal enum Posix {
     public static func sendfile(descriptor: CInt, fd: CInt, offset: off_t, count: size_t) throws -> IOResult<Int> {
         var written: off_t = 0
         do {
-            try wrapSyscall(nonblocking: true) { () -> ssize_t in
+            _ = try call(nonblocking: true) { () -> ssize_t in
                 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
                     var w: off_t = off_t(count)
                     let result: CInt = Darwin.sendfile(fd, descriptor, offset, &w, nil, 0)
@@ -449,56 +444,56 @@ internal enum Posix {
 
     @inline(never)
     public static func sendmmsg(sockfd: CInt, msgvec: UnsafeMutablePointer<MMsgHdr>, vlen: CUnsignedInt, flags: CInt) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             Int(sysSendMmsg(sockfd, msgvec, vlen, flags))
         }
     }
 
     @inline(never)
     public static func recvmmsg(sockfd: CInt, msgvec: UnsafeMutablePointer<MMsgHdr>, vlen: CUnsignedInt, flags: CInt, timeout: UnsafeMutablePointer<timespec>?) throws -> IOResult<Int> {
-        return try wrapSyscallMayBlock(nonblocking: false) {
+        return try call(nonblocking: false) {
             Int(sysRecvMmsg(sockfd, msgvec, vlen, flags, timeout))
         }
     }
 
     @inline(never)
     public static func getpeername(socket: CInt, address: UnsafeMutablePointer<sockaddr>, addressLength: UnsafeMutablePointer<socklen_t>) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             return sysGetpeername(socket, address, addressLength)
         }
     }
 
     @inline(never)
     public static func getsockname(socket: CInt, address: UnsafeMutablePointer<sockaddr>, addressLength: UnsafeMutablePointer<socklen_t>) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             return sysGetsockname(socket, address, addressLength)
         }
     }
 
     @inline(never)
     public static func getifaddrs(_ addrs: UnsafeMutablePointer<UnsafeMutablePointer<ifaddrs>?>) throws {
-        try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysGetifaddrs(addrs)
         }
     }
 
     @inline(never)
     public static func if_nametoindex(_ name: UnsafePointer<CChar>?) throws -> CUnsignedInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysIfNameToIndex(name)
-        }
+        }.result
     }
 
     @inline(never)
     public static func poll(fds: UnsafeMutablePointer<pollfd>, nfds: nfds_t, timeout: CInt) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysPoll(fds, nfds, timeout)
-        }
+        }.result
     }
 
     @inline(never)
     public static func fstat(descriptor: CInt, outStat: UnsafeMutablePointer<stat>) throws {
-        _ = try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysFstat(descriptor, outStat)
         }
     }
@@ -508,7 +503,7 @@ internal enum Posix {
                                   type: CInt,
                                   protocol: CInt,
                                   socketVector: UnsafeMutablePointer<CInt>?) throws {
-        _ = try wrapSyscall(nonblocking: true) {
+        _ = try call(nonblocking: true) {
             sysSocketpair(domain, type, `protocol`, socketVector)
         }
     }
@@ -521,17 +516,17 @@ internal enum KQueue {
 
     @inline(never)
     public static func kqueue() throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             Darwin.kqueue()
-        }
+        }.result
     }
 
     @inline(never)
     @discardableResult
     public static func kevent(kq: CInt, changelist: UnsafePointer<kevent>?, nchanges: CInt, eventlist: UnsafeMutablePointer<kevent>?, nevents: CInt, timeout: UnsafePointer<Darwin.timespec>?) throws -> CInt {
-        return try wrapSyscall(nonblocking: true) {
+        return try call(nonblocking: true) {
             sysKevent(kq, changelist, nchanges, eventlist, nevents, timeout)
-        }
+        }.result
     }
 }
 #endif
