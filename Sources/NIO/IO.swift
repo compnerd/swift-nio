@@ -12,6 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if os(Windows)
+import WinSDK
+#endif
+
 /// An `Error` for an IO operation.
 public struct IOError: Swift.Error {
     @available(*, deprecated, message: "NIO no longer uses FailureDescription.")
@@ -28,8 +32,40 @@ public struct IOError: Swift.Error {
         return .reason(self.failureDescription)
     }
 
+    private enum Storage {
+#if os(Windows)
+    case WinSockError(CInt)
+    case WindowsError(DWORD)
+#endif
+    case errno(CInt)
+    }
+
+    private let storage: Storage
+
     /// The `errno` that was set for the operation.
-    public let errnoCode: CInt
+    public var errnoCode: CInt {
+      guard case .errno(let code) = self.storage else {
+        fatalError("non-errno error code")
+      }
+      return code
+    }
+
+#if os(Windows)
+    public init(WinSockError code: CInt, reason: String) {
+      self.storage = .WinSockError(code)
+      self.failureDescription = reason
+    }
+
+    public init(WindowsError code: DWORD, reason: String) {
+      self.storage = .WindowsError(code)
+      self.failureDescription = reason
+    }
+
+    public init(errno code: CInt, reason: String) {
+      self.storage = .errno(code)
+      self.failureDescription = reason
+    }
+#endif
 
     /// Creates a new `IOError``
     ///
@@ -37,7 +73,7 @@ public struct IOError: Swift.Error {
     ///     - errorCode: the `errno` that was set for the operation.
     ///     - reason: the actual reason (in an human-readable form).
     public init(errnoCode: CInt, reason: String) {
-        self.errnoCode = errnoCode
+        self.storage = .errno(errnoCode)
         self.failureDescription = reason
     }
 
@@ -48,7 +84,7 @@ public struct IOError: Swift.Error {
     ///     - function: The function the error happened in, the human readable description will be generated automatically when needed.
     @available(*, deprecated, renamed: "init(errnoCode:reason:)")
     public init(errnoCode: CInt, function: StaticString) {
-        self.errnoCode = errnoCode
+        self.storage = .errno(errnoCode)
         self.failureDescription = "\(function)"
     }
 }
