@@ -12,13 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+import CNIOLinux
+#if os(Windows)
+import WinSDK
+#endif
+
 /// A utility function that runs the body code only in debug builds, without
 /// emitting compiler warnings.
 ///
 /// This is currently the only way to do this in Swift: see
 /// https://forums.swift.org/t/support-debug-only-code/11037 for a discussion.
-import CNIOLinux
-
 @inlinable
 internal func debugOnly(_ body: () -> Void) {
     assert({ body(); return true }())
@@ -41,7 +44,31 @@ public enum System {
     ///
     /// - returns: The logical core count on the system.
     public static var coreCount: Int {
+#if os(Windows)
+        var dwLength: DWORD = 0
+        GetLogicalProcessorInformation(nil, &dwLength)
+
+        var pBuffer: UnsafeMutableRawPointer =
+            UnsafeMutableRawPointer.allocate(byteCount: Int(dwLength),
+                                             alignment: MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.alignment)
+        defer { pBuffer.deallocate() }
+
+        let dwSLPICount: Int = Int(dwLength) / MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.size
+        let pSLPI: UnsafeMutablePointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> =
+            pBuffer.bindMemory(to: SYSTEM_LOGICAL_PROCESSOR_INFORMATION.self,
+                               capacity: dwSLPICount)
+
+        let bResult: Bool = GetLogicalProcessorInformation(pSLPI, &dwLength)
+        assert(bResult, "GetLogicalProcessorInformation failed: \(GetLastError())")
+
+        return UnsafeBufferPointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>(start: pSLPI,
+                                                                         count: dwSLPICount)
+                  .filter { $0.Relationship == RelationProcessorCore }
+                  .map { $0.ProcessorMask.nonzeroBitCount }
+                  .reduce(0, +)
+#else
         return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+#endif
     }
 
     /// A utility function that enumerates the available network interfaces on this machine.
@@ -53,12 +80,63 @@ public enum System {
     /// - returns: An array of network interfaces available on this machine.
     /// - throws: If an error is encountered while enumerating interfaces.
     public static func enumerateInterfaces() throws -> [NIONetworkInterface] {
+#if os(Windows)
+        var ulSize: ULONG = 0
+        GetAdaptersAddresses(ULONG(AF_UNSPEC), 0, nil, nil, &ulSize)
+
+        var pBuffer: UnsafeMutableRawPointer =
+            UnsafeMutableRawPointer.allocate(byteCount: Int(ulSize),
+                                             alignment: MemoryLayout<IP_ADAPTER_ADDRESSES>.alignment)
+        defer { pBuffer.deallocate() }
+
+        let ulResult: ULONG =
+            GetAdaptersAddresses(ULONG(AF_UNSPEC), 0, nil,
+                                 pBuffer.assumingMemoryBound(to: IP_ADAPTER_ADDRESSES.self),
+                                 &ulSize)
+        guard ulResult == ERROR_SUCCESS else {
+          throw IOError(WindowsError: ulResult, reason: "GetAdaptersAddresses")
+        }
+
+        var szAddress: [WCHAR] =
+            Array<WCHAR>(repeating: 0, count: Int(NI_MAXHOST))
+
+        var pAdapter: UnsafeMutablePointer<IP_ADAPTER_ADDRESSES>? =
+            pBuffer.assumingMemoryBound(to: IP_ADAPTER_ADDRESSES.self)
+        while pAdapter != nil {
+          print("Adapter: \(String(cString: pAdapter!.pointee.AdapterName))")
+
+          let pUnicastAddresses: UnsafeMutablePointer<IP_ADAPTER_UNICAST_ADDRESS>? =
+              pAdapter!.pointee.FirstUnicastAddress
+          let pAnycastAddresses: UnsafeMutablePointer<IP_ADAPTER_ANYCAST_ADDRESS>? =
+              pAdapter!.pointee.FirstAnycastAddress
+          let pMulticastAdresses: UnsafeMutablePointer<IP_ADAPTER_MULTICAST_ADDRESS>? =
+              pAdapter!.pointee.FirstMulticastAddress
+
+          var pUnicastAddress: UnsafeMutablePointer<IP_ADAPTER_UNICAST_ADDRESS>? =
+              pUnicastAddresses
+          while pUnicastAddress != nil {
+            switch pUnicastAddress!.pointee.Address.lpSockaddr.pointee.sa_family {
+            case ADDRESS_FAMILY(AF_INET), ADDRESS_FAMILY(AF_INET6):
+              if GetNameInfoW(pUnicastAddress!.pointee.Address.lpSockaddr,
+                              pUnicastAddress!.pointee.Address.iSockaddrLength,
+                              &szAddress, DWORD(szAddress.capacity), nil, 0,
+                              NI_NUMERICHOST) == 0 {
+                print("\tIP Address: \(String(decodingCString: &szAddress, as: UTF16.self))")
+              }
+            default: break
+            }
+
+            pUnicastAddress = pUnicastAddress!.pointee.Next
+          }
+          pAdapter = pAdapter!.pointee.Next
+        }
+
+        return []
+#else
         var interface: UnsafeMutablePointer<ifaddrs>? = nil
         try Posix.getifaddrs(&interface)
         let originalInterface = interface
-        defer {
-            freeifaddrs(originalInterface)
-        }
+        defer { Posix.freeifaddrs(originalInterface) }
 
         var results: [NIONetworkInterface] = []
         results.reserveCapacity(12)  // Arbitrary choice.
@@ -70,5 +148,6 @@ public enum System {
         }
 
         return results
+#endif
     }
 }

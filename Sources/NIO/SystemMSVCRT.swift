@@ -32,7 +32,10 @@ import CNIOWindows
 
 internal typealias MMsgHdr = CNIOWindows_mmsghdr
 
-internal typealias inaddr = IN_ADDR
+internal typealias in_addr = IN_ADDR
+internal typealias in6_addr = IN6_ADDR
+
+internal typealias in_port_t = UInt16
 
 internal typealias linger = LINGER
 
@@ -45,6 +48,15 @@ internal typealias sockaddr_storage = SOCKADDR_STORAGE
 internal typealias socklen_t = WinSDK.socklen_t
 
 internal typealias sa_family_t = ADDRESS_FAMILY
+
+internal typealias addrinfo = ADDRINFOA
+
+internal extension IN_ADDR {
+  var s_addr: UInt32 { self.S_un.S_addr }
+}
+
+internal let INET_ADDRSTRLEN = WinSDK.INET_ADDRSTRLEN
+internal let INET6_ADDRSTRLEN = WinSDK.INET6_ADDRSTRLEN
 
 private func _filter_errno(_ errno: CInt, _ function: String) {
   // strerror is documented to return "Unknown error: ..." for illegal value so it won't ever fail
@@ -112,6 +124,9 @@ internal enum Posix {
   static let AF_INET: sa_family_t = sa_family_t(WinSDK.AF_INET)
   static let AF_INET6: sa_family_t = sa_family_t(WinSDK.AF_INET6)
 
+  static let PF_INET: CInt = CInt(WinSDK.PF_INET)
+  static let PF_INET6: CInt = CInt(WinSDK.PF_INET6)
+
   @inline(never)
   public static func accept(socket s: SOCKET,
                             addr: UnsafeMutablePointer<sockaddr>?,
@@ -165,9 +180,25 @@ internal enum Posix {
   }
 
   @inline(never)
+  public static func freeaddrinfo(_ pAddrInfo: UnsafeMutablePointer<ADDRINFO>?) {
+    WinSDK.freeaddrinfo(pAddrInfo)
+  }
+
+  @inline(never)
   public static func fstat(descriptor fd: CInt,
                            outStat buffer: UnsafeMutablePointer<stat>) throws {
     _ = try call(blocking: false) { ucrt.fstat(fd, buffer) }
+  }
+
+  @inline(never)
+  public static func getaddrinfo(_ pNodeName: UnsafePointer<CChar>,
+                                 _ pServiceName: UnsafePointer<CChar>,
+                                 _ pHints: UnsafePointer<ADDRINFOA>?,
+                                 _ ppResult: UnsafeMutablePointer<UnsafeMutablePointer<ADDRINFOA>?>?)
+      throws {
+    let iResult = WinSDK.getaddrinfo(pNodeName, pServiceName, pHints, ppResult)
+    if iResult == 0 { return }
+    throw IOError(WinSockError: iResult, reason: "getaddrinfo")
   }
 
   @inline(never)
@@ -213,6 +244,18 @@ internal enum Posix {
       throw IOError(WindowsError: GetLastError(), reason: "inet_ntop")
     }
     return result
+  }
+
+  @inline(never)
+  public static func inet_pton(_ Family: CInt,
+                               _ pszAddrString: UnsafePointer<CChar>,
+                               _ pAddrBuf: UnsafeMutableRawPointer) throws {
+    switch WinSDK.inet_pton(Family, pszAddrString, pAddrBuf) {
+    case 0: throw IOError(errno: EINVAL, reason: "inet_pton")
+    case 1: return
+    default: break
+    }
+    throw IOError(WinSockError: WSAGetLastError(), reason: "inet_pton")
   }
 
   @inline(never)

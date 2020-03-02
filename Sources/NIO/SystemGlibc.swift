@@ -36,8 +36,6 @@ let INADDR_ANY = UInt32(0) // #define INADDR_ANY ((unsigned long int) 0x00000000
 internal typealias sockaddr_storage = __kernel_sockaddr_storage
 internal typealias in_port_t = UInt16
 
-let freeifaddrs: @convention(c) (UnsafeMutablePointer<ifaddrs>?) -> Void = android_freeifaddrs
-
 // http://lkml.iu.edu/hypermail/linux/kernel/0106.1/0080.html
 extension ipv6_mreq {
     init (ipv6mr_multiaddr: in6_addr, ipv6mr_interface: UInt32) {
@@ -146,9 +144,13 @@ internal enum Posix {
     static let IPPROTO_TCP: CInt = CInt(Glibc.IPPROTO_TCP)
     static let UIO_MAXIOV: Int = Int(Glibc.UIO_MAXIOV)
 
-    static let AF_INET = sa_family_t(Glibc.AF_INET)
-    static let AF_INET6 = sa_family_t(Glibc.AF_INET6)
-    static let AF_UNIX = sa_family_t(Glibc.AF_UNIX)
+    static let AF_INET: sa_family_t = sa_family_t(Glibc.AF_INET)
+    static let AF_INET6: sa_family_t = sa_family_t(Glibc.AF_INET6)
+    static let AF_UNIX: sa_family_t = sa_family_t(Glibc.AF_UNIX)
+
+    static let PF_INET = Glibc.PF_INET
+    static let PF_INET6 = Glibc.PF_INET6
+    static let PF_UNIX = Glibc.PF_UNIX
 
     @inline(never)
     public static func shutdown(descriptor: CInt, how: Shutdown) throws {
@@ -345,6 +347,17 @@ internal enum Posix {
         }
     }
 
+    @inline(never)
+    public static func inet_pton(_ af: CInt, _ src: UnsafePointer<CChar>,
+                                 _ dst: UnsafeMutableRawPointer) throws {
+        switch try call(nonblocking: true, { Glibc.inet_pton(af, src, dst) }).result {
+        case 0: throw IOError(errno: EINVAL, reason: "inet_pton")
+        case 1: return
+        default: break
+        }
+        throw IOError(errnoCode: errno, reason: "inet_pton")
+    }
+
     // It's not really posix but exists on Linux and MacOS / BSD so just put it here for now to keep it simple
     @inline(never)
     public static func sendfile(descriptor: CInt, fd: CInt, offset: off_t, count: size_t) throws -> IOResult<Int> {
@@ -433,6 +446,33 @@ internal enum Posix {
         _ = try call(nonblocking: true) {
             Glibc.socketpair(domain, type, `protocol`, socketVector)
         }
+    }
+
+
+    @inline(never)
+    public static func freeifaddrs(_ addrs: UnsafeMutablePointer<ifaddrs>?) {
+#if os(Android)
+      android_freeifaddrs(addrs)
+#else
+      Glibc.freeifaddrs(addrs)
+#endif
+    }
+
+    @inline(never)
+    public static func getaddrinfo(_ node: UnsafePointer<CChar>,
+                                   _ service: UnsafePointer<CChar>,
+                                   _ hints: UnsafePointer<addrinfo>?,
+                                   _ res: UnsafeMutablePointer<UnsafeMutablePointer<addrinfo>?>?)
+        throws {
+      /* FIXME: this is blocking! */
+      let result = Glibc.getaddrinfo(node, service, hints, res)
+      if result == 0 { return }
+      throw IOError(errnoCode: result, reason: "getaddrinfo")
+    }
+
+    @inline(never)
+    public static func freeaddrinfo(_ res: UnsafeMutablePointer<addrinfo>?) {
+      Glibc.freeaddrinfo(res)
     }
 }
 

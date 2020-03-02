@@ -126,9 +126,13 @@ internal enum Posix {
 
     static let UIO_MAXIOV: Int = 1024
 
-    static let AF_INET = sa_family_t(Darwin.AF_INET)
-    static let AF_INET6 = sa_family_t(Darwin.AF_INET6)
-    static let AF_UNIX = sa_family_t(Darwin.AF_UNIX)
+    static let AF_INET: sa_family_t = sa_family_t(Darwin.AF_INET)
+    static let AF_INET6: sa_family_t = sa_family_t(Darwin.AF_INET6)
+    static let AF_UNIX: sa_family_t = sa_family_t(Darwin.AF_UNIX)
+
+    static let PF_INET = Darwin.PF_INET
+    static let PF_INET6 = Darwin.PF_INET6
+    static let PF_UNIX = Darwin.PF_UNIX
 
     @inline(never)
     public static func shutdown(descriptor: CInt, how: Shutdown) throws {
@@ -406,6 +410,39 @@ internal enum Posix {
         _ = try call(nonblocking: true) {
             Darwin.socketpair(domain, type, `protocol`, socketVector)
         }
+    }
+
+    @inline(never)
+    public static func freeifaddrs(_ addrs: UnsafeMutablePointer<ifaddrs>?) {
+      Darwin.freeifaddrs(addrs)
+    }
+
+    @inline(never)
+    public static func inet_pton(_ af: CInt, _ src: UnsafePointer<CChar>,
+                                 _ dst: UnsafeMutableRawPointer) throws {
+        switch try call(nonblocking: true, { Darwin.inet_pton(af, src, dst) }).result {
+        case 0: throw IOError(errno: EINVAL, reason: "inet_pton")
+        case 1: return
+        default: break
+        }
+        throw IOError(errnoCode: errno, reason: "inet_pton")
+    }
+
+    @inline(never)
+    public static func getaddrinfo(_ node: UnsafePointer<CChar>,
+                                   _ service: UnsafePointer<CChar>,
+                                   _ hints: UnsafePointer<addrinfo>?,
+                                   _ res: UnsafeMutablePointer<UnsafeMutablePointer<addrinfo>?>?)
+        throws {
+      /* FIXME: this is blocking! */
+      let result = Darwin.getaddrinfo(node, service, hints, res)
+      if result == 0 { return }
+      throw IOError(errnoCode: result, reason: "getaddrinfo")
+    }
+
+    @inline(never)
+    public static func freeaddrinfo(_ res: UnsafeMutablePointer<addrinfo>?) {
+      Darwin.freeaddrinfo(res)
     }
 }
 
