@@ -1,0 +1,7 @@
+add_subdirectory(CNIOAtomics)
+add_subdirectory(CNIODarwin)
+add_subdirectory(CNIOHTTPParser)
+add_subdirectory(CNIOLinux)
+add_subdirectory(CNIOSHA1)
+add_subdirectory(NIOConcurrencyHelpers)
+add_subdirectory(NIO)
