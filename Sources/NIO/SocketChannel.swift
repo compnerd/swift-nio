@@ -752,19 +752,19 @@ extension DatagramChannel: MulticastChannel {
             case (.v4(let groupAddress), .some(.v4(let interfaceAddress))):
                 // IPv4Binding with specific target interface.
                 let multicastRequest = ip_mreq(imr_multiaddr: groupAddress.address.sin_addr, imr_interface: interfaceAddress.address.sin_addr)
-                try self.socket.setOption(level: CInt(IPPROTO_IP), name: operation.optionName(level: CInt(IPPROTO_IP)), value: multicastRequest)
+                try self.socket.setOption(level: BSDSocket.OptionLevel.IPPROTO_IP, name: operation.optionName(level: CInt(IPPROTO_IP)), value: multicastRequest)
             case (.v4(let groupAddress), .none):
                 // IPv4 binding without target interface.
                 let multicastRequest = ip_mreq(imr_multiaddr: groupAddress.address.sin_addr, imr_interface: in_addr(s_addr: INADDR_ANY))
-                try self.socket.setOption(level: CInt(IPPROTO_IP), name: operation.optionName(level: CInt(IPPROTO_IP)), value: multicastRequest)
+                try self.socket.setOption(level: BSDSocket.OptionLevel.IPPROTO_IP, name: operation.optionName(level: CInt(IPPROTO_IP)), value: multicastRequest)
             case (.v6(let groupAddress), .some(.v6)):
                 // IPv6 binding with specific target interface.
                 let multicastRequest = ipv6_mreq(ipv6mr_multiaddr: groupAddress.address.sin6_addr, ipv6mr_interface: UInt32(interface!.interfaceIndex))
-                try self.socket.setOption(level: CInt(IPPROTO_IPV6), name: operation.optionName(level: CInt(IPPROTO_IPV6)), value: multicastRequest)
+                try self.socket.setOption(level: BSDSocket.OptionLevel.IPPROTO_IPV6, name: operation.optionName(level: CInt(IPPROTO_IPV6)), value: multicastRequest)
             case (.v6(let groupAddress), .none):
                 // IPv6 binding with no specific interface requested.
                 let multicastRequest = ipv6_mreq(ipv6mr_multiaddr: groupAddress.address.sin6_addr, ipv6mr_interface: 0)
-                try self.socket.setOption(level: CInt(IPPROTO_IPV6), name: operation.optionName(level: CInt(IPPROTO_IPV6)), value: multicastRequest)
+                try self.socket.setOption(level: BSDSocket.OptionLevel.IPPROTO_IPV6, name: operation.optionName(level: CInt(IPPROTO_IPV6)), value: multicastRequest)
             case (.v4, .some(.v6)), (.v6, .some(.v4)), (.v4, .some(.unixDomainSocket)), (.v6, .some(.unixDomainSocket)):
                 // Mismatched group and interface address: this is an error.
                 throw ChannelError.badInterfaceAddressFamily

@@ -59,7 +59,9 @@ protocol SocketProtocol: BaseSocketProtocol {
 
     func shutdown(how: Shutdown) throws
 
+#if !os(Windows)
     func ignoreSIGPIPE() throws
+#endif
 }
 
 #if os(Linux)

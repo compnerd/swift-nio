@@ -13,7 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 /// The container used for writing multiple buffers via `writev`.
+#if os(Windows)
+import struct WinSDK.WSABUF
+typealias IOVector = WSABUF
+#else
 typealias IOVector = iovec
+#endif
 
 // TODO: scattering support
 /* final but tests */ class Socket: BaseSocket, SocketProtocol {

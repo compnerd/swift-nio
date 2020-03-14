@@ -105,12 +105,15 @@ internal extension BSDSocket {
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
   static let PF_INET: CInt = CInt(Darwin.PF_INET)
   static let PF_INET6: CInt = CInt(Darwin.PF_INET6)
+  static let PF_UNIX: CInt = CInt(Darwin.PF_UNIX)
 #elseif os(Windows)
   static let PF_INET: CInt = CInt(WinSDK.PF_INET)
   static let PF_INET6: CInt = CInt(WinSDK.PF_INET6)
+  static let PF_UNIX: CInt = CInt(WinSDK.PF_UNIX)
 #else
   static let PF_INET: CInt = CInt(Glibc.PF_INET)
   static let PF_INET6: CInt = CInt(Glibc.PF_INET6)
+  static let PF_UNIX: CInt = CInt(Glibc.PF_UNIX)
 #endif
 }
 

@@ -116,11 +116,11 @@ internal class GetaddrinfoResolver: Resolver {
 
         while true {
             switch info.pointee.ai_family {
-            case AF_INET:
+            case BSDSocket.AF_INET:
                 info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ptr in
                     v4Results.append(.init(ptr.pointee, host: host))
                 }
-            case AF_INET6:
+            case BSDSocket.AF_INET6:
                 info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { ptr in
                     v6Results.append(.init(ptr.pointee, host: host))
                 }
