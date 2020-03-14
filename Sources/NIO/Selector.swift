@@ -208,8 +208,8 @@ extension EpollFilterSet {
     }
 }
 
+#if os(Linux)
 extension SelectorEventSet {
-    #if os(Linux)
     var epollEventSet: UInt32 {
         assert(self != ._none)
         // EPOLLERR | EPOLLHUP is always set unconditionally anyway but it's easier to understand if we explicitly ask.
@@ -245,9 +245,8 @@ extension SelectorEventSet {
         }
         self = selectorEventSet
     }
-
-    #endif
 }
+#endif
 
 
 ///  A `Selector` allows a user to register different `Selectable` sources to an underlying OS selector, and for that selector to notify them once IO is ready for them to process.
@@ -433,15 +432,15 @@ internal class Selector<R: Registration> {
 
         try selectable.withUnsafeHandle { fd in
             assert(registrations[Int(fd)] == nil)
-            #if os(Linux)
-                var ev = Epoll.epoll_event()
-                ev.events = interested.epollEventSet
-                ev.data.fd = fd
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+            try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: nil)
+#else
+            var ev = Epoll.epoll_event()
+            ev.events = interested.epollEventSet
+            ev.data.fd = fd
 
-                try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_ADD, fd: fd, event: &ev)
-            #else
-                try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: nil)
-            #endif
+            try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_ADD, fd: fd, event: &ev)
+#endif
             registrations[Int(fd)] = makeRegistration(interested)
         }
     }
@@ -460,15 +459,15 @@ internal class Selector<R: Registration> {
         try selectable.withUnsafeHandle { fd in
             var reg = registrations[Int(fd)]!
 
-            #if os(Linux)
-                var ev = Epoll.epoll_event()
-                ev.events = interested.epollEventSet
-                ev.data.fd = fd
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+            try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: reg.interested)
+#else
+            var ev = Epoll.epoll_event()
+            ev.events = interested.epollEventSet
+            ev.data.fd = fd
 
-                _ = try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_MOD, fd: fd, event: &ev)
-            #else
-                try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: reg.interested)
-            #endif
+            _ = try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_MOD, fd: fd, event: &ev)
+#endif
             reg.interested = interested
             registrations[Int(fd)] = reg
         }
@@ -492,12 +491,12 @@ internal class Selector<R: Registration> {
                 return
             }
 
-            #if os(Linux)
-                var ev = Epoll.epoll_event()
-                _ = try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_DEL, fd: fd, event: &ev)
-            #else
-                try kqueueUpdateEventNotifications(selectable: selectable, interested: .reset, oldInterested: reg.interested)
-            #endif
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+            try kqueueUpdateEventNotifications(selectable: selectable, interested: .reset, oldInterested: reg.interested)
+#else
+            var ev = Epoll.epoll_event()
+            _ = try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_DEL, fd: fd, event: &ev)
+#endif
         }
     }
 
@@ -663,12 +662,7 @@ internal class Selector<R: Registration> {
     func wakeup() throws {
         assert(NIOThread.current != self.myThread)
         try self.externalSelectorFDLock.withLock {
-        #if os(Linux)
-            guard self.eventFD >= 0 else {
-                throw EventLoopError.shutdown
-            }
-            _ = try EventFd.eventfd_write(fd: self.eventFD, value: 1)
-        #else
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
             guard self.selectorFD >= 0 else {
                 throw EventLoopError.shutdown
             }
@@ -682,7 +676,12 @@ internal class Selector<R: Registration> {
             try withUnsafeMutablePointer(to: &event) { ptr in
                 try self.kqueueApplyEventChangeSet(keventBuffer: UnsafeMutableBufferPointer(start: ptr, count: 1))
             }
-        #endif
+#else
+            guard self.eventFD >= 0 else {
+                throw EventLoopError.shutdown
+            }
+            _ = try EventFd.eventfd_write(fd: self.eventFD, value: 1)
+#endif
         }
     }
 }
