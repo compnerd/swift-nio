@@ -59,7 +59,9 @@ protocol SocketProtocol: BaseSocketProtocol {
 
     func shutdown(how: Shutdown) throws
 
+#if !os(Windows)
     func ignoreSIGPIPE() throws
+#endif
 }
 
 #if os(Linux)
@@ -71,6 +73,7 @@ private let globallyIgnoredSIGPIPE: Bool = {
 }()
 #endif
 
+#if !os(Windows)
 extension BaseSocketProtocol {
     // used by `BaseSocket` and `PipePair`.
     internal static func ignoreSIGPIPE(descriptor fd: CInt) throws {
@@ -90,3 +93,4 @@ extension BaseSocketProtocol {
         #endif
     }
 }
+#endif

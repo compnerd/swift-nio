@@ -13,7 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 /// The container used for writing multiple buffers via `writev`.
+#if os(Windows)
+import struct WinSDK.WSABUF
+typealias IOVector = WSABUF
+#else
 typealias IOVector = iovec
+#endif
 
 // TODO: scattering support
 /* final but tests */ class Socket: BaseSocket, SocketProtocol {
@@ -23,7 +28,11 @@ typealias IOVector = iovec
     static var writevLimitBytes = Int(Int32.max)
 
     /// The maximum number of `IOVector`s to write per `writev` call.
+#if os(Windows)
+    static let writevLimitIOVectors: Int = 128
+#else
     static let writevLimitIOVectors: Int = Posix.UIO_MAXIOV
+#endif
 
     /// Create a new instance.
     ///
@@ -94,7 +103,7 @@ typealias IOVector = iovec
     ///
     /// - throws: An `IOError` if the operation failed.
     func finishConnect() throws {
-        let result: Int32 = try getOption(level: SOL_SOCKET, name: SO_ERROR)
+        let result: Int32 = try getOption(level: BSDSocket.OptionLevel.SOL_SOCKET.rawValue, name: BSDSocket.Option.SO_ERROR.rawValue)
         if result != 0 {
             throw IOError(errnoCode: result, reason: "finishing a non-blocking connect failed")
         }
@@ -108,7 +117,7 @@ typealias IOVector = iovec
     /// - throws: An `IOError` if the operation failed.
     func write(pointer: UnsafeRawBufferPointer) throws -> IOResult<Int> {
         return try withUnsafeHandle {
-            try Posix.write(descriptor: $0, pointer: pointer.baseAddress!, size: pointer.count)
+            try BSDSocket.send(socket: $0, buffer: pointer.baseAddress!, length: pointer.count)
         }
     }
 
@@ -149,7 +158,7 @@ typealias IOVector = iovec
     /// - throws: An `IOError` if the operation failed.
     func read(pointer: UnsafeMutableRawBufferPointer) throws -> IOResult<Int> {
         return try withUnsafeHandle {
-            try Posix.read(descriptor: $0, pointer: pointer.baseAddress!, size: pointer.count)
+            try BSDSocket.recv(socket: $0, buffer: pointer.baseAddress!, length: pointer.count)
         }
     }
 
@@ -182,7 +191,7 @@ typealias IOVector = iovec
     /// - throws: An `IOError` if the operation failed.
     func sendFile(fd: Int32, offset: Int, count: Int) throws -> IOResult<Int> {
         return try withUnsafeHandle {
-            try Posix.sendfile(descriptor: $0, fd: fd, offset: off_t(offset), count: count)
+            try BSDSocket.sendfile(socket: $0, fd: fd, offset: off_t(offset), len: count)
         }
     }
 

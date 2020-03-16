@@ -30,10 +30,10 @@ protocol SockAddrProtocol {
 }
 
 /// Returns a description for the given address.
-internal func descriptionForAddress(family: sa_family_t, bytes: UnsafeRawPointer, length byteCount: Int) throws -> String {
+internal func descriptionForAddress(family: CInt, bytes: UnsafeRawPointer, length byteCount: Int) throws -> String {
     var addressBytes: [Int8] = Array(repeating: 0, count: byteCount)
     return try addressBytes.withUnsafeMutableBufferPointer { (addressBytesPtr: inout UnsafeMutableBufferPointer<Int8>) -> String in
-        try BSDSocket.inet_ntop(af: CInt(family),
+        try BSDSocket.inet_ntop(af: family,
                                 src: bytes,
                                 dst: addressBytesPtr.baseAddress!,
                                 size: socklen_t(byteCount))
@@ -47,7 +47,7 @@ internal func descriptionForAddress(family: sa_family_t, bytes: UnsafeRawPointer
 extension UnsafeMutablePointer where Pointee == sockaddr {
     /// Converts the `sockaddr` to a `SocketAddress`.
     func convert() -> SocketAddress? {
-        switch pointee.sa_family {
+        switch CInt(pointee.sa_family) {
         case BSDSocket.AF_INET:
             return self.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
                 SocketAddress($0.pointee, host: $0.pointee.addressDescription())
@@ -192,7 +192,7 @@ extension sockaddr_storage {
 
     /// Converts the `socketaddr_storage` to a `SocketAddress`.
     mutating func convert() -> SocketAddress {
-        switch self.ss_family {
+        switch CInt(self.ss_family) {
         case BSDSocket.AF_INET:
             var sockAddr: sockaddr_in = self.convert()
             return SocketAddress(sockAddr, host: sockAddr.addressDescription())
@@ -346,7 +346,7 @@ class BaseSocket: BaseSocketProtocol {
     ///     - value: The value for the option.
     /// - throws: An `IOError` if the operation failed.
     final func setOption<T>(level: Int32, name: Int32, value: T) throws {
-        if level == BSDSocket.OptionLevel.IPPROTO_TCP.rawValue && name == TCP_NODELAY && (try? self.localAddress().protocolFamily) == Optional<Int32>.some(Int32(BSDSocket.AF_UNIX)) {
+        if level == BSDSocket.OptionLevel.IPPROTO_TCP.rawValue && name == BSDSocket.Option.TCP_NODELAY.rawValue && (try? self.localAddress().protocolFamily) == Optional<Int32>.some(Int32(BSDSocket.AF_UNIX)) {
             // setting TCP_NODELAY on UNIX domain sockets will fail. Previously we had a bug where we would ignore
             // most socket options settings so for the time being we'll just ignore this. Let's revisit for NIO 2.0.
             return
@@ -385,7 +385,7 @@ class BaseSocket: BaseSocketProtocol {
                 storage.deallocate()
             }
 
-            try BSDSocket.getsockopt(socket: fd, level: BSDSocket.OptionLevel(rawValue: level), option_name: BSDSocket.Option(rawValue: name), option_value: val, option_len: &length)
+            try BSDSocket.getsockopt(socket: fd, level: level, option_name: name, option_value: val.baseAddress!, option_len: &length)
             return val.pointee
         }
     }

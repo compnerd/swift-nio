@@ -23,6 +23,19 @@
 /// This resolver is a single-use object: it can only be used to perform a single host resolution.
 import CNIOLinux
 
+#if os(Windows)
+import let WinSDK.AF_INET
+import let WinSDK.AF_INET6
+
+import func WinSDK.FreeAddrInfoW
+import func WinSDK.GetAddrInfoW
+
+import struct WinSDK.ADDRESS_FAMILY
+import struct WinSDK.ADDRINFOW
+import struct WinSDK.SOCKADDR_IN
+import struct WinSDK.SOCKADDR_IN6
+#endif
+
 internal class GetaddrinfoResolver: Resolver {
     private let v4Future: EventLoopPromise<[SocketAddress]>
     private let v6Future: EventLoopPromise<[SocketAddress]>
@@ -85,6 +98,29 @@ internal class GetaddrinfoResolver: Resolver {
     ///     - host: The hostname to do the DNS queries on.
     ///     - port: The port we'll be connecting to.
     private func resolve(host: String, port: Int) {
+#if os(Windows)
+        host.withCString(encodedAs: UTF16.self) { wszHost in
+            String(port).withCString(encodedAs: UTF16.self) { wszPort in
+                var pResult: UnsafeMutablePointer<ADDRINFOW>?
+
+                var aHints: ADDRINFOW = ADDRINFOW()
+                aHints.ai_socktype = self.aiSocktype
+                aHints.ai_protocol = self.aiProtocol
+
+                guard GetAddrInfoW(wszHost, wszPort, &aHints, &pResult) == 0 else {
+                    self.fail(SocketAddressError.unknown(host: host, port: port))
+                    return
+                }
+
+                if let pResult = pResult {
+                    parseResults(pResult, host: host)
+                    FreeAddrInfoW(pResult)
+                } else {
+                    self.fail(SocketAddressError.unsupported)
+                }
+            }
+        }
+#else
         var info: UnsafeMutablePointer<addrinfo>?
 
         var hint = addrinfo()
@@ -102,6 +138,7 @@ internal class GetaddrinfoResolver: Resolver {
             /* this is odd, getaddrinfo returned NULL */
             self.fail(SocketAddressError.unsupported)
         }
+#endif
     }
 
     /// Parses the DNS results from the `addrinfo` linked list.
@@ -109,6 +146,36 @@ internal class GetaddrinfoResolver: Resolver {
     /// - parameters:
     ///     - info: The pointer to the first of the `addrinfo` structures in the list.
     ///     - host: The hostname we resolved.
+#if os(Windows)
+    private func parseResults(_ pResult: UnsafeMutablePointer<ADDRINFOW>?, host: String) {
+        var v4: [SocketAddress] = []
+        var v6: [SocketAddress] = []
+
+        var pResult: UnsafeMutablePointer<ADDRINFOW>? = pResult
+        while pResult != nil {
+            switch pResult!.pointee.ai_family {
+            case AF_INET:
+                pResult!.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self,
+                                                          capacity: 1) {
+                    v6.append(SocketAddress($0.pointee, host: host))
+                }
+            case AF_INET6:
+                pResult!.pointee.ai_addr.withMemoryRebound(to: sockaddr_in6.self,
+                                                          capacity: 1) {
+                    v6.append(SocketAddress($0.pointee, host: host))
+                }
+            default:
+                self.fail(SocketAddressError.unsupported)
+                return
+            }
+
+            pResult = pResult!.pointee.ai_next
+        }
+
+        v4Future.succeed(v4)
+        v6Future.succeed(v6)
+    }
+#else
     private func parseResults(_ info: UnsafeMutablePointer<addrinfo>, host: String) {
         var info = info
         var v4Results = [SocketAddress]()
@@ -116,11 +183,11 @@ internal class GetaddrinfoResolver: Resolver {
 
         while true {
             switch info.pointee.ai_family {
-            case AF_INET:
+            case BSDSocket.AF_INET:
                 info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { ptr in
                     v4Results.append(.init(ptr.pointee, host: host))
                 }
-            case AF_INET6:
+            case BSDSocket.AF_INET6:
                 info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { ptr in
                     v6Results.append(.init(ptr.pointee, host: host))
                 }
@@ -139,6 +206,7 @@ internal class GetaddrinfoResolver: Resolver {
         v6Future.succeed(v6Results)
         v4Future.succeed(v4Results)
     }
+#endif
 
     /// Record an error and fail the lookup process.
     ///

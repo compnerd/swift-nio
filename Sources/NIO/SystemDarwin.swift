@@ -180,26 +180,6 @@ internal enum Posix {
         }.result
     }
 
-    // It's not really posix but exists on Linux and MacOS / BSD so just put it here for now to keep it simple
-    @inline(never)
-    public static func sendfile(descriptor: CInt, fd: CInt, offset: off_t, count: size_t) throws -> IOResult<Int> {
-        var written: off_t = 0
-        do {
-            _ = try syscall(blocking: false) { () -> ssize_t in
-                    var w: off_t = off_t(count)
-                    let result: CInt = Darwin.sendfile(fd, descriptor, offset, &w, nil, 0)
-                    written = w
-                    return ssize_t(result)
-            }
-            return .processed(Int(written))
-        } catch let err as IOError {
-            if err.errnoCode == EAGAIN {
-                return .wouldBlock(Int(written))
-            }
-            throw err
-        }
-    }
-
     @inline(never)
     public static func sendmmsg(sockfd: CInt, msgvec: UnsafeMutablePointer<MMsgHdr>, vlen: CUnsignedInt, flags: CInt) throws -> IOResult<Int> {
         return try syscall(blocking: true) {

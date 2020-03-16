@@ -15,7 +15,10 @@
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
 import Darwin
 #elseif os(Windows)
+import ucrt
+import MSVCRT
 import WinSDK
+internal typealias sockaddr = WinSDK.SOCKADDR
 internal typealias socklen_t = WinSDK.socklen_t
 #else
 import Glibc
@@ -86,17 +89,20 @@ internal extension BSDSocket {
 // Address Family
 internal extension BSDSocket {
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
-  static let AF_INET: sa_family_t = sa_family_t(Darwin.AF_INET)
-  static let AF_INET6: sa_family_t = sa_family_t(Darwin.AF_INET6)
-  static let AF_UNIX: sa_family_t = sa_family_t(Darwin.AF_UNIX)
+  static let AF_INET: CInt = CInt(Darwin.AF_INET)
+  static let AF_INET6: CInt = CInt(Darwin.AF_INET6)
+  static let AF_UNIX: CInt = CInt(Darwin.AF_UNIX)
+  static let AF_UNSPEC: CInt = CInt(Darwin.AF_UNSPEC)
 #elseif os(Windows)
-  static let AF_INET: sa_family_t = sa_family_t(WinSDK.AF_INET)
-  static let AF_INET6: sa_family_t = sa_family_t(WinSDK.AF_INET6)
-  static let AF_UNIX: sa_family_t = sa_family_t(WinSDK.AF_UNIX)
+  static let AF_INET: CInt = CInt(WinSDK.AF_INET)
+  static let AF_INET6: CInt = CInt(WinSDK.AF_INET6)
+  static let AF_UNIX: CInt = CInt(WinSDK.AF_UNIX)
+  static let AF_UNSPEC: CInt = CInt(WinSDK.AF_UNSPEC)
 #else
-  static let AF_INET: sa_family_t = sa_family_t(Glibc.AF_INET)
-  static let AF_INET6: sa_family_t = sa_family_t(Glibc.AF_INET6)
-  static let AF_UNIX: sa_family_t = sa_family_t(Glibc.AF_UNIX)
+  static let AF_INET: CInt = CInt(Glibc.AF_INET)
+  static let AF_INET6: CInt = CInt(Glibc.AF_INET6)
+  static let AF_UNIX: CInt = CInt(Glibc.AF_UNIX)
+  static let AF_UNSPEC: CInt = CInt(Glibc.AF_UNSPEC)
 #endif
 }
 
@@ -105,12 +111,15 @@ internal extension BSDSocket {
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
   static let PF_INET: CInt = CInt(Darwin.PF_INET)
   static let PF_INET6: CInt = CInt(Darwin.PF_INET6)
+  static let PF_UNIX: CInt = CInt(Darwin.PF_UNIX)
 #elseif os(Windows)
   static let PF_INET: CInt = CInt(WinSDK.PF_INET)
   static let PF_INET6: CInt = CInt(WinSDK.PF_INET6)
+  static let PF_UNIX: CInt = CInt(WinSDK.PF_UNIX)
 #else
   static let PF_INET: CInt = CInt(Glibc.PF_INET)
   static let PF_INET6: CInt = CInt(Glibc.PF_INET6)
+  static let PF_UNIX: CInt = CInt(Glibc.PF_UNIX)
 #endif
 }
 
@@ -134,10 +143,11 @@ internal extension BSDSocket {
 }
 
 // SocketOptionLevel
-internal extension BSDSocket {
-  struct OptionLevel {
+public extension BSDSocket {
+  struct OptionLevel: Equatable {
     let rawValue: CInt
 
+    // Protocol
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
     static let IPPROTO_IP: OptionLevel = OptionLevel(rawValue: Darwin.IPPROTO_IP)
     static let IPPROTO_IPV6: OptionLevel = OptionLevel(rawValue: Darwin.IPPROTO_IPV6)
@@ -151,20 +161,87 @@ internal extension BSDSocket {
     static let IPPROTO_IPV6: OptionLevel = OptionLevel(rawValue: CInt(Glibc.IPPROTO_IPV6))
     static let IPPROTO_TCP: OptionLevel = OptionLevel(rawValue: CInt(Glibc.IPPROTO_TCP))
 #endif
+
+    // Socket
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    static let SOL_SOCKET: OptionLevel = OptionLevel(rawValue: Darwin.SOL_SOCKET)
+#elseif os(Windows)
+    static let SOL_SOCKET: OptionLevel = OptionLevel(rawValue: WinSDK.SOL_SOCKET)
+#else
+    static let SOL_SOCKET: OptionLevel = OptionLevel(rawValue: Glibc.SOL_SOCKET)
+#endif
   }
 }
 
 // SocketOption
-internal extension BSDSocket {
-  struct Option {
+public extension BSDSocket {
+  struct Option: Equatable {
     let rawValue: CInt
 
+    // IP Options
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    static let IP_ADD_MEMBERSHIP: Option = Option(rawValue: Darwin.IP_ADD_MEMBERSHIP)
+    static let IP_DROP_MEMBERSHIP: Option = Option(rawValue: Darwin.IP_DROP_MEMBERSHIP)
+    static let IP_MULTICAST_LOOP: Option = Option(rawValue: Darwin.IP_MULTICAST_LOOP)
+    static let IP_MULTICAST_IF: Option = Option(rawValue: Darwin.IP_MULTICAST_IF)
+    static let IP_MULTICAST_TTL: Option = Option(rawValue: Darwin.IP_MULTICAST_TTL)
+#elseif os(Windows)
+    static let IP_ADD_MEMBERSHIP: Option = Option(rawValue: WinSDK.IP_ADD_MEMBERSHIP)
+    static let IP_DROP_MEMBERSHIP: Option = Option(rawValue: WinSDK.IP_DROP_MEMBERSHIP)
+    static let IP_MULTICAST_LOOP: Option = Option(rawValue: WinSDK.IP_MULTICAST_LOOP)
+    static let IP_MULTICAST_IF: Option = Option(rawValue: WinSDK.IP_MULTICAST_IF)
+    static let IP_MULTICAST_TTL: Option = Option(rawValue: WinSDK.IP_MULTICAST_TTL)
+#else
+    static let IP_ADD_MEMBERSHIP: Option = Option(rawValue: Glibc.IP_ADD_MEMBERSHIP)
+    static let IP_DROP_MEMBERSHIP: Option = Option(rawValue: Glibc.IP_DROP_MEMBERSHIP)
+    static let IP_MULTICAST_LOOP: Option = Option(rawValue: Glibc.IP_MULTICAST_LOOP)
+    static let IP_MULTICAST_IF: Option = Option(rawValue: Glibc.IP_MULTICAST_IF)
+    static let IP_MULTICAST_TTL: Option = Option(rawValue: Glibc.IP_MULTICAST_TTL)
+#endif
+
+    // IPv6 Options
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    static let IPV6_JOIN_GROUP: Option = Option(rawValue: Darwin.IPV6_JOIN_GROUP)
+    static let IPV6_LEAVE_GROUP: Option = Option(rawValue: Darwin.IPV6_LEAVE_GROUP)
+    static let IPV6_MULTICAST_HOPS: Option = Option(rawValue: Darwin.IPV6_MULTICAST_HOPS)
+    static let IPV6_MULTICAST_IF: Option = Option(rawValue: Darwin.IPV6_MULTICAST_IF)
+    static let IPV6_MULTICAST_LOOP: Option = Option(rawValue: Darwin.IPV6_MULTICAST_LOOP)
     static let IPV6_V6ONLY: Option = Option(rawValue: Darwin.IPV6_V6ONLY)
 #elseif os(Windows)
+    static let IPV6_JOIN_GROUP: Option = Option(rawValue: WinSDK.IPV6_JOIN_GROUP)
+    static let IPV6_LEAVE_GROUP: Option = Option(rawValue: WinSDK.IPV6_LEAVE_GROUP)
+    static let IPV6_MULTICAST_HOPS: Option = Option(rawValue: WinSDK.IPV6_MULTICAST_HOPS)
+    static let IPV6_MULTICAST_IF: Option = Option(rawValue: WinSDK.IPV6_MULTICAST_IF)
+    static let IPV6_MULTICAST_LOOP: Option = Option(rawValue: WinSDK.IPV6_MULTICAST_LOOP)
     static let IPV6_V6ONLY: Option = Option(rawValue: WinSDK.IPV6_V6ONLY)
 #else
+    static let IPV6_JOIN_GROUP: Option = Option(rawValue: Glibc.IPV6_JOIN_GROUP)
+    static let IPV6_LEAVE_GROUP: Option = Option(rawValue: Glibc.IPV6_LEAVE_GROUP)
+    static let IPV6_MULTICAST_HOPS: Option = Option(rawValue: Glibc.IPV6_MULTICAST_HOPS)
+    static let IPV6_MULTICAST_IF: Option = Option(rawValue: Glibc.IPV6_MULTICAST_IF)
+    static let IPV6_MULTICAST_LOOP: Option = Option(rawValue: Glibc.IPV6_MULTICAST_LOOP)
     static let IPV6_V6ONLY: Option = Option(rawValue: Glibc.IPV6_V6ONLY)
+#endif
+
+    // TCP Options
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    static let TCP_NODELAY: Option = Option(rawValue: Darwin.TCP_NODELAY)
+#elseif os(Windows)
+    static let TCP_NODELAY: Option = Option(rawValue: WinSDK.TCP_NODELAY)
+#else
+    static let TCP_NODELAY: Option = Option(rawValue: Glibc.TCP_NODELAY)
+#endif
+
+    // Socket Options
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    static let SO_ERROR: Option = Option(rawValue: Darwin.SO_ERROR)
+    static let SO_LINGER: Option = Option(rawValue: Darwin.SO_LINGER)
+#elseif os(Windows)
+    static let SO_ERROR: Option = Option(rawValue: WinSDK.SO_ERROR)
+    static let SO_LINGER: Option = Option(rawValue: WinSDK.SO_LINGER)
+#else
+    static let SO_ERROR: Option = Option(rawValue: Glibc.SO_ERROR)
+    static let SO_LINGER: Option = Option(rawValue: Glibc.SO_LINGER)
 #endif
   }
 }
@@ -338,7 +415,7 @@ internal extension BSDSocket {
       throws {
 #if os(Windows)
     if WinSDK.getsockopt(socket, level.rawValue, optname.rawValue,
-                         optval?.assumingMemoryBound(to: CChar.self),
+                         optval.assumingMemoryBound(to: CChar.self),
                          optlen) == SOCKET_ERROR {
       throw IOError(WinSockError: WSAGetLastError(), reason: "getsockopt")
     }
@@ -373,6 +450,29 @@ internal extension BSDSocket {
   }
 
   @inline(never)
+  static func recv(socket s: BSDSocket.Handle,
+                   buffer buf: UnsafeMutableRawPointer, length len: size_t)
+      throws -> IOResult<size_t> {
+#if os(Windows)
+    let iResult: CInt =
+        WinSDK.recv(s, buf.assumingMemoryBound(to: CChar.self), CInt(len), 0)
+    if iResult == SOCKET_ERROR {
+      throw IOError(WinSockError: WSAGetLastError(), reason: "recv")
+    }
+    return .processed(size_t(iResult))
+#else
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    let recv: (CInt, UnsafeMutableRawPointer, size_t, CInt) -> ssize_t = Darwin.recv
+#else
+    let recv: (CInt, UnsafeMutableRawPointer, size_t, CInt) -> ssize_t = Glibc.recv
+#endif
+    return try syscall(blocking: true) {
+      read(s, buf, len, 0)
+    }
+#endif
+  }
+
+  @inline(never)
   static func recvfrom(socket s: BSDSocket.Handle,
                        buffer buf: UnsafeMutableRawPointer, length len: size_t,
                        address from: UnsafeMutablePointer<sockaddr>,
@@ -399,13 +499,35 @@ internal extension BSDSocket {
   }
 
   @inline(never)
+  static func send(socket s: BSDSocket.Handle, buffer buf: UnsafeRawPointer,
+                   length len: size_t) throws -> IOResult<size_t> {
+#if os(Windows)
+    let iResult: CInt =
+        WinSDK.send(s, buf.assumingMemoryBound(to: CChar.self), CInt(len), 0)
+    if iResult == SOCKET_ERROR {
+      throw IOError(WinSockError: WSAGetLastError(), reason: "send")
+    }
+    return .processed(size_t(iResult))
+#else
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    let send: (CInt, UnsafeRawPointer, size_t, CInt) -> ssize_t = Darwin.setsockopt
+#else
+    let send: (CInt, UnsafeRawPointer, size_t, CInt) -> ssize_t = Glibc.setsockopt
+#endif
+    return try syscall(blocking: true) {
+      send(s, buf, len, 0)
+    }
+#endif
+  }
+
+  @inline(never)
   static func setsockopt(socket: BSDSocket.Handle, level: BSDSocket.OptionLevel,
                          option_name optname: BSDSocket.Option,
                          option_value optval: UnsafeRawPointer,
                          option_len optlen: socklen_t) throws {
 #if os(Windows)
     if WinSDK.setsockopt(socket, level.rawValue, optname.rawValue,
-                         optval?.assumingMemoryBound(to: CChar.self),
+                         optval.assumingMemoryBound(to: CChar.self),
                          optlen) == SOCKET_ERROR {
       throw IOError(WinSockError: WSAGetLastError(), reason: "setsockopt")
     }
@@ -523,6 +645,7 @@ internal extension BSDSocket {
                         size StringBufSize: socklen_t)
       throws -> UnsafePointer<CChar> {
 #if os(Windows)
+    // TODO(compnerd) use `InetNtopW` to ensure that we handle unicode properly
     guard let result = WinSDK.inet_ntop(Family, pAddr, pStringBuf,
                                         Int(StringBufSize)) else {
       throw IOError(WindowsError: GetLastError(), reason: "inet_ntop")
@@ -536,6 +659,73 @@ internal extension BSDSocket {
 #endif
     return try wrapErrorIsNullReturnCall {
       inet_ntop(Family, pAddr, pStringBuf, StringBufSize)
+    }
+#endif
+  }
+
+  @inline(never)
+  static func inet_pton(af Family: CInt,
+                        src pszAddrString: UnsafePointer<CChar>,
+                        dst pAddrBuf: UnsafeMutableRawPointer) throws {
+#if os(Windows)
+    // TODO(compnerd) use `InetPtonW` to ensure that we handle unicode properly
+    switch WinSDK.inet_pton(Family, pszAddrString, pAddrBuf) {
+    case 0: throw IOError(errnoCode: EINVAL, reason: "inet_pton")
+    case 1: return
+    default: throw IOError(WinSockError: WSAGetLastError(), reason: "inet_pton")
+    }
+#else
+#endif
+  }
+
+  @inline(never)
+  static func sendfile(socket s: BSDSocket.Handle, fd: CInt, offset: off_t,
+                       len nNumberOfBytesToWrite: off_t)
+      throws -> IOResult<CInt> {
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    var written: off_t = 0
+    do {
+      _ = try syscall(blocking: false) { () -> ssize_t in
+        var w: off_t = off_t(count)
+        let result: CInt = Darwin.sendfile(fd, descriptor, offset, &w, nil, 0)
+        written = w
+        return ssize_t(result)
+      }
+      return .processed(CInt(written))
+    } catch let error as IOError {
+      if error.errnoCode == EAGAIN {
+        return .wouldBlock(CInt(written))
+      }
+      throw error
+    }
+#elseif os(Windows)
+    let hFile: HANDLE = HANDLE(bitPattern: ucrt._get_osfhandle(fd))!
+    if hFile == INVALID_HANDLE_VALUE {
+      throw IOError(errnoCode: EBADF, reason: "_get_osfhandle")
+    }
+    var ovlOverlapped: OVERLAPPED = OVERLAPPED()
+    ovlOverlapped.Offset = DWORD(UInt32(offset >> 0) & 0xffffffff)
+    ovlOverlapped.OffsetHigh = DWORD(UInt32(offset >> 32) & 0xffffffff)
+    if !TransmitFile(s, hFile, DWORD(nNumberOfBytesToWrite), 0, &ovlOverlapped,
+                     nil, DWORD(TF_USE_KERNEL_APC)) {
+      throw IOError(WinSockError: WSAGetLastError(), reason: "TransmitFile")
+    }
+    return .processed(CInt(nNumberOfBytesToWrite))
+#else
+    var written: off_t = 0
+    do {
+      _ = try syscall(blocking: false) { () -> ssize_t in
+        var off: off_t = offset
+        let result: ssize_t = Glibc.sendfile(descriptor, fd, &off, count)
+        written = result >= 0 ? result : 0
+        return result
+      }
+      return .processed(CInt(written))
+    } catch let error as IOError {
+      if error.errnoCode == EAGAIN {
+        return .wouldBlock(CInt(written))
+      }
+      throw error
     }
 #endif
   }

@@ -13,6 +13,13 @@
 //===----------------------------------------------------------------------===//
 import NIOConcurrencyHelpers
 
+#if os(Windows)
+import struct WinSDK.SOCKADDR
+import struct WinSDK.WSABUF
+import struct WinSDK.WSAMSG
+import typealias WinSDK.CHAR
+#endif
+
 private struct PendingDatagramWrite {
     var data: ByteBuffer
     var promise: Optional<EventLoopPromise<Void>>
@@ -97,15 +104,28 @@ private func doPendingDatagramWriteVectorOperation(pending: PendingDatagramWrite
         p.data.withUnsafeReadableBytesWithStorageManagement { ptr, storageRef in
             storageRefs[c] = storageRef.retain()
             let addressLen = p.copySocketAddress(addresses.baseAddress! + c)
-            iovecs[c] = iovec(iov_base: UnsafeMutableRawPointer(mutating: ptr.baseAddress!), iov_len: numericCast(toWriteForThisBuffer))
 
-            let msg = msghdr(msg_name: addresses.baseAddress! + c,
+            let buffer: UnsafeMutablePointer<IOVector> = iovecs.baseAddress! + c
+            let address: UnsafeMutablePointer<sockaddr_storage> =
+                addresses.baseAddress! + c
+#if os(Windows)
+            iovecs[c] = IOVector(len: numericCast(toWriteForThisBuffer),
+                                 buf: UnsafeMutableRawPointer(mutating: ptr.baseAddress!).assumingMemoryBound(to: CHAR.self))
+            let msg = address.withMemoryRebound(to: SOCKADDR.self, capacity: 1) {
+                // FIXME(compnerd) Control should indicate the IP destination address
+                WSAMSG(name: $0, namelen: addressLen, lpBuffers: buffer,
+                       dwBufferCount: 1, Control: WSABUF(), dwFlags: 0)
+            }
+#else
+            iovecs[c] = IOVector(iov_base: UnsafeMutableRawPointer(mutating: ptr.baseAddress!), iov_len: numericCast(toWriteForThisBuffer))
+            let msg = msghdr(msg_name: address,
                              msg_namelen: addressLen,
-                             msg_iov: iovecs.baseAddress! + c,
+                             msg_iov: buffer,
                              msg_iovlen: 1,
                              msg_control: nil,
                              msg_controllen: 0,
                              msg_flags: 0)
+#endif
             msgs[c] = MMsgHdr(msg_hdr: msg, msg_len: CUnsignedInt(toWriteForThisBuffer))
         }
         c += 1

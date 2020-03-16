@@ -20,14 +20,25 @@
 import CNIOLinux
 
 #if os(Windows)
+import let WinSDK.AF_INET
+import let WinSDK.AF_INET6
+import let WinSDK.AF_UNSPEC
+import let WinSDK.ERROR_SUCCESS
+
 import let WinSDK.RelationProcessorCore
 
 import func WinSDK.GetLastError
 import func WinSDK.GetLogicalProcessorInformation
+import func WinSDK.GetAdaptersAddresses
 
+import struct WinSDK.ADDRESS_FAMILY
+import struct WinSDK.IP_ADAPTER_ADDRESSES
+import struct WinSDK.IP_ADAPTER_UNICAST_ADDRESS
 import struct WinSDK.SYSTEM_LOGICAL_PROCESSOR_INFORMATION
 
 import typealias WinSDK.DWORD
+import typealias WinSDK.ULONG
+import typealias WinSDK.WCHAR
 #endif
 
 @inlinable
@@ -94,6 +105,44 @@ public enum System {
     /// - returns: An array of network interfaces available on this machine.
     /// - throws: If an error is encountered while enumerating interfaces.
     public static func enumerateInterfaces() throws -> [NIONetworkInterface] {
+        var interfaces: [NIONetworkInterface] = []
+        interfaces.reserveCapacity(12)  // Arbitrary choice.
+#if os(Windows)
+        var ulSize: ULONG = 0
+        _ = GetAdaptersAddresses(ULONG(AF_UNSPEC), 0, nil, nil, &ulSize)
+
+        let alignment: Int = MemoryLayout<IP_ADAPTER_ADDRESSES>.alignment
+        var pBuffer: UnsafeMutableRawPointer =
+            UnsafeMutableRawPointer.allocate(byteCount: Int(ulSize),
+                                             alignment: alignment)
+        defer {
+            pBuffer.deallocate()
+        }
+
+        let ulResult: ULONG =
+            GetAdaptersAddresses(ULONG(AF_UNSPEC), 0, nil,
+                                 pBuffer.assumingMemoryBound(to: IP_ADAPTER_ADDRESSES.self),
+                                 &ulSize)
+        guard ulResult == ERROR_SUCCESS else {
+            throw IOError(WindowsError: ulResult, reason: "GetAdaptersAddresses")
+        }
+
+        var pAdapter: UnsafeMutablePointer<IP_ADAPTER_ADDRESSES>? =
+            pBuffer.assumingMemoryBound(to: IP_ADAPTER_ADDRESSES.self)
+        while pAdapter != nil {
+            let pUnicastAddresses: UnsafeMutablePointer<IP_ADAPTER_UNICAST_ADDRESS>? =
+                pAdapter!.pointee.FirstUnicastAddress
+            var pUnicastAddress: UnsafeMutablePointer<IP_ADAPTER_UNICAST_ADDRESS>? =
+                pUnicastAddresses
+            while pUnicastAddress != nil {
+                if let interface = NIONetworkInterface(pAdapter!, pUnicastAddress!) {
+                    interfaces.append(interface)
+                }
+                pUnicastAddress = pUnicastAddress!.pointee.Next
+            }
+            pAdapter = pAdapter!.pointee.Next
+        }
+#else
         var interface: UnsafeMutablePointer<ifaddrs>? = nil
         try Posix.getifaddrs(&interface)
         let originalInterface = interface
@@ -101,15 +150,14 @@ public enum System {
             freeifaddrs(originalInterface)
         }
 
-        var results: [NIONetworkInterface] = []
-        results.reserveCapacity(12)  // Arbitrary choice.
         while let concreteInterface = interface {
             if let nioInterface = NIONetworkInterface(concreteInterface.pointee) {
-                results.append(nioInterface)
+                interfaces.append(nioInterface)
             }
             interface = concreteInterface.pointee.ifa_next
         }
 
-        return results
+#endif
+        return interfaces
     }
 }

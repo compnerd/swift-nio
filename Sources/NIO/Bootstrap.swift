@@ -12,6 +12,18 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if os(Windows)
+import func ucrt._get_osfhandle
+
+import let WinSDK.FILE_TYPE_PIPE
+import let WinSDK.INVALID_HANDLE_VALUE
+
+import func WinSDK.GetFileType
+
+import typealias WinSDK.DWORD
+import typealias WinSDK.HANDLE
+#endif
+
 /// The type of all `channelInitializer` callbacks.
 internal typealias ChannelInitializerCallback = (Channel) -> EventLoopFuture<Void>
 
@@ -86,7 +98,7 @@ public final class ServerBootstrap {
         self._childChannelOptions = ChannelOptions.Storage()
         self.serverChannelInit = nil
         self.childChannelInit = nil
-        self._serverChannelOptions.append(key: ChannelOptions.socket(SocketOptionLevel(BSDSocket.OptionLevel.IPPROTO_TCP.rawValue), TCP_NODELAY), value: 1)
+        self._serverChannelOptions.append(key: ChannelOptions.socket(SocketOptionLevel(BSDSocket.OptionLevel.IPPROTO_TCP.rawValue), BSDSocket.Option.TCP_NODELAY.rawValue), value: 1)
     }
 
     /// Initialize the `ServerSocketChannel` with `initializer`. The most common task in initializer is to add
@@ -414,7 +426,7 @@ public final class ClientBootstrap: NIOTCPClientBootstrap {
     public init(group: EventLoopGroup) {
         self.group = group
         self._channelOptions = ChannelOptions.Storage()
-        self._channelOptions.append(key: ChannelOptions.socket(SocketOptionLevel(BSDSocket.OptionLevel.IPPROTO_TCP.rawValue), TCP_NODELAY), value: 1)
+        self._channelOptions.append(key: ChannelOptions.socket(SocketOptionLevel(BSDSocket.OptionLevel.IPPROTO_TCP.rawValue), BSDSocket.Option.TCP_NODELAY.rawValue), value: 1)
         self.channelInitializer = nil
         self.resolver = nil
     }
@@ -812,6 +824,19 @@ public final class NIOPipeBootstrap {
     private func validateFileDescriptorIsNotAFile(_ descriptor: CInt) throws {
         precondition(MultiThreadedEventLoopGroup.currentEventLoop == nil,
                      "limitation in SwiftNIO: cannot bootstrap PipeChannel on EventLoop")
+#if os(Windows)
+        // NOTE: this is a *non-owning* handle, do *NOT* call `CloseHandle`
+        let hFile: HANDLE = HANDLE(bitPattern: ucrt._get_osfhandle(descriptor))!
+        if hFile == WinSDK.INVALID_HANDLE_VALUE {
+          throw IOError(errnoCode: EBADF, reason: "_get_osfhandle")
+        }
+        switch WinSDK.GetFileType(hFile) {
+        case DWORD(WinSDK.FILE_TYPE_PIPE):
+          break
+        default:
+          throw ChannelError.operationUnsupported
+        }
+#else
         var s: stat = .init()
         try withUnsafeMutablePointer(to: &s) { ptr in
             try Posix.fstat(descriptor: descriptor, outStat: ptr)
@@ -819,6 +844,7 @@ public final class NIOPipeBootstrap {
         if (s.st_mode & S_IFREG) != 0 || (s.st_mode & S_IFDIR) != 0 {
             throw ChannelError.operationUnsupported
         }
+#endif
     }
 
     /// Create the `PipeChannel` with the provided input and output file descriptors.
@@ -827,6 +853,7 @@ public final class NIOPipeBootstrap {
     ///     - inputDescriptor: The _Unix file descriptor_ for the input (ie. the read side).
     ///     - outputDescriptor: The _Unix file descriptor_ for the output (ie. the write side).
     /// - returns: an `EventLoopFuture<Channel>` to deliver the `Channel`.
+#if !os(Windows)
     public func withPipes(inputDescriptor: CInt, outputDescriptor: CInt) -> EventLoopFuture<Channel> {
         let eventLoop = group.next()
         do {
@@ -873,4 +900,5 @@ public final class NIOPipeBootstrap {
             }
         }
     }
+#endif
 }

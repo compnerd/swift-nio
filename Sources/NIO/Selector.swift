@@ -258,6 +258,7 @@ internal class Selector<R: Registration> {
 
     #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
     private typealias EventType = kevent
+    #elseif os(Windows)
     #else
     private typealias EventType = Epoll.epoll_event
     private var earliestTimer: NIODeadline = .distantFuture
@@ -332,6 +333,7 @@ internal class Selector<R: Registration> {
         try withUnsafeMutablePointer(to: &event) { ptr in
             try kqueueApplyEventChangeSet(keventBuffer: UnsafeMutableBufferPointer(start: ptr, count: 1))
         }
+#elseif os(Windows)
 #else
         self.selectorFD = try Epoll.epoll_create(size: 128)
         self.eventFD = try EventFd.eventfd(initval: 0, flags: Int32(EventFd.EFD_CLOEXEC | EventFd.EFD_NONBLOCK))
@@ -434,6 +436,7 @@ internal class Selector<R: Registration> {
             assert(registrations[Int(fd)] == nil)
 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
             try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: nil)
+#elseif os(Windows)
 #else
             var ev = Epoll.epoll_event()
             ev.events = interested.epollEventSet
@@ -461,6 +464,7 @@ internal class Selector<R: Registration> {
 
 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
             try kqueueUpdateEventNotifications(selectable: selectable, interested: interested, oldInterested: reg.interested)
+#elseif os(Windows)
 #else
             var ev = Epoll.epoll_event()
             ev.events = interested.epollEventSet
@@ -493,6 +497,7 @@ internal class Selector<R: Registration> {
 
 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
             try kqueueUpdateEventNotifications(selectable: selectable, interested: .reset, oldInterested: reg.interested)
+#elseif os(Windows)
 #else
             var ev = Epoll.epoll_event()
             _ = try Epoll.epoll_ctl(epfd: self.selectorFD, op: Epoll.EPOLL_CTL_DEL, fd: fd, event: &ev)
@@ -562,6 +567,7 @@ internal class Selector<R: Registration> {
         }
 
         growEventArrayIfNeeded(ready: ready)
+#elseif os(Windows)
 #else
         let ready: Int
 
@@ -676,6 +682,7 @@ internal class Selector<R: Registration> {
             try withUnsafeMutablePointer(to: &event) { ptr in
                 try self.kqueueApplyEventChangeSet(keventBuffer: UnsafeMutableBufferPointer(start: ptr, count: 1))
             }
+#elseif os(Windows)
 #else
             guard self.eventFD >= 0 else {
                 throw EventLoopError.shutdown
